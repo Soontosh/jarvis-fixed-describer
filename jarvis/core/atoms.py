@@ -24,6 +24,7 @@ from sklearn.metrics import mean_absolute_error
 import zipfile
 import json
 from math import cos, pi, sin
+import torch
 
 amu_gm = 1.66054e-24
 ang_cm = 1e-8
@@ -1408,52 +1409,60 @@ class Atoms(object):
         return round(pf[0], 5)
 
     def get_alignn_feats(
-        self,
-        model_name="jv_formation_energy_peratom_alignn",
-        max_neighbors=12,
-        neighbor_strategy="k-nearest",
-        use_canonize=True,
-        atom_features="cgcnn",
-        line_graph=True,
-        cutoff=8,
-        model="",
-    ):
-        """Get ALIGNN features."""
-
-        def get_val(model, g, lg):
-            activation = {}
-
-            def getActivation(name):
-                # the hook signature
-                def hook(model, input, output):
-                    activation[name] = output.detach()
-
-                return hook
-
-            h = model.readout.register_forward_hook(getActivation("readout"))
-            out = model([g, lg])
-            del out
-            h.remove()
-            return activation["readout"][0]
-
-        from alignn.graphs import Graph
-        from alignn.pretrained import get_figshare_model
-
-        g, lg = Graph.atom_dgl_multigraph(
             self,
-            cutoff=cutoff,
-            atom_features=atom_features,
-            max_neighbors=max_neighbors,
-            neighbor_strategy=neighbor_strategy,
-            compute_line_graph=line_graph,
-            use_canonize=use_canonize,
-        )
-        if model == "":
-            model = get_figshare_model(
-                model_name="jv_formation_energy_peratom_alignn"
+            model_name="jv_formation_energy_peratom_alignn",
+            max_neighbors=12,
+            neighbor_strategy="k-nearest",
+            use_canonize=True,
+            atom_features="cgcnn",
+            line_graph=True,
+            cutoff=8,
+            model="",
+        ):
+            """Get ALIGNN features."""
+
+            def get_val(model, g, lg):
+                activation = {}
+
+                def getActivation(name):
+                    # the hook signature
+                    def hook(model, input, output):
+                        activation[name] = output.detach()
+
+                    return hook
+
+                h = model.readout.register_forward_hook(getActivation("readout"))
+                out = model([g, lg])
+                del out
+                h.remove()
+                return activation["readout"][0]
+
+            from alignn.graphs import Graph
+            from alignn.pretrained import get_figshare_model
+
+            device = torch.device("cpu")
+
+            g, lg = Graph.atom_dgl_multigraph(
+                self,
+                cutoff=cutoff,
+                atom_features=atom_features,
+                max_neighbors=max_neighbors,
+                neighbor_strategy=neighbor_strategy,
+                compute_line_graph=line_graph,
+                use_canonize=use_canonize,
             )
-        h = get_val(model, g, lg)
-        return h
+
+            g = g.to(device)
+            lg = lg.to(device)
+
+            if model == "":
+                model = get_figshare_model(
+                    model_name="jv_formation_energy_peratom_alignn"
+                )
+            model = model.to(device)
+
+            h = get_val(model, g, lg)
+            return h
 
     def get_mineral_prototype_name(
         self, prim=True, include_c_over_a=False, digits=3
